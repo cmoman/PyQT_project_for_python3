@@ -162,7 +162,7 @@ class Form(QDialog):
     @pyqtSlot(str) # from walker object
     def indexed(self, fname):
         #print('arrived {}'.format(fname))
-        qApp.processEvents()
+        qApp.processEvents() #possible only needed on Windows
         self.statusLabel.setText(fname)
         self.fileCount += 1
         if self.fileCount % 25 == 0:
