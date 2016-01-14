@@ -103,11 +103,13 @@ class Form(QDialog):
         self.destroyed.connect(self.threadx.deleteLater)
         self.destroyed.connect(self.walker.deleteLater)
     
-        self.threadx.finished.connect(self.walker.deleteLater)
-    
         #self.walker.indexed.connect(self.indexed, Qt.BlockingQueuedConnection)
         #event BlockingQueuedConnections work meaning the two processes are genuinely in different threads.
-        self.walker.indexed.connect(self.indexed, Qt.BlockingQueuedConnection)
+        #http://doc.qt.io/qt-5/threads-reentrancy.html
+        #http://doc.qt.io/qt-5/threads-qobject.html#signals-and-slots-across-threads
+        #https://mayaposch.wordpress.com/2011/11/01/how-to-really-truly-use-qthreads-the-full-explanation/
+
+        self.walker.indexed.connect(self.indexed)
         self.walker.finished.connect(self.finished)
         self.walker.stoppedsig.connect(self.threadx.quit)
     
