@@ -28,10 +28,10 @@ class Walker(QObject):
     
     '''
     Configured to emit three signals
-    self.emit(SIGNAL("stopped(bool)"), self.stopped)
-    self.emit(SIGNAL("finished(bool)"), self.completed)
-    self.emit(SIGNAL("indexed(QString)"), fname)
     '''
+    stoppedsig = pyqtSignal(bool)
+    finished = pyqtSignal(bool)
+    indexed = pyqtSignal(str)
 
 
     def __init__(self, lock, parent=None):
@@ -42,7 +42,7 @@ class Walker(QObject):
         self.path = None
         self.completed = False
 
-
+    @pyqtSlot(int,dict,set)
     def initialize(self, path, filenamesForWords, commonWords):
         self.stopped = False
         self.path = path
@@ -54,7 +54,7 @@ class Walker(QObject):
     def stop(self):
         with QMutexLocker(self.mutex):
             self.stopped = True
-            self.emit(SIGNAL("stopped(bool)"), self.stopped)
+            self.stoppedsig.emit(self.stopped)
             
 
 
@@ -62,11 +62,11 @@ class Walker(QObject):
         with QMutexLocker(self.mutex):
             return self.stopped
 
-
+    @pyqtSlot()
     def run(self):
         self.processFiles(self.path)
         self.stop()
-        self.emit(SIGNAL("finished(bool)"), self.completed)
+        self.finished.emit(self.completed)
 
 
     def processFiles(self, path):
@@ -121,6 +121,6 @@ class Walker(QObject):
                             self.commonWords.add(word)
                         else:
                             files.add(fname)
-                self.emit(SIGNAL("indexed(QString)"), fname)
+                self.indexed.emit(fname)
         self.completed = True
 

@@ -15,12 +15,15 @@ from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 import walker_CMO as walker
 
-
 class Form(QDialog):
+    
+    walkerrunsignal = pyqtSignal()
+    walkerinitializesignal = pyqtSignal(str, dict, set)
+    walkerstopsignal = pyqtSignal()
 
     def __init__(self, parent=None):
         super(Form, self).__init__(parent)
-
+        
         self.fileCount = 0
         self.filenamesForWords = collections.defaultdict(set)
         self.commonWords = set()
@@ -83,31 +86,40 @@ class Form(QDialog):
         layout.addWidget(self.statusLabel)
         self.setLayout(layout)
         
+        #Set up the thread and start it Int the setPath method this start it's event loop
+        self.threadx = QThread(parent=self) 
+
+        #Connect the local signal to their slots
+        self.pathButton.clicked.connect(self.setPath)
+        self.findEdit.returnPressed.connect(self.find)    
         self.setWindowTitle("Page Indexer")
 
+        #Instantiate the walker and move it to the thread.
+        #From now on, all communication is via the signal and slots to avoid either  thread blocking the other.
         self.walker = walker.Walker(self.lock)
-        #self.connect(self.walker, SIGNAL("indexed(QString)"), self.indexed, SLOT("indexed(QString)"))
-        #self.connect(self.walker, SIGNAL("finished(bool)"), self.finished, SLOT("finished(bool)"))
-        
-        self.connect(self.walker, SIGNAL("indexed(QString)"), self, SLOT("indexed(QString)"))
-        self.connect(self.walker, SIGNAL("finished(bool)"), self, SLOT("finished(bool)"))        
-        
-        self.connect(self.pathButton, SIGNAL("clicked()"), self.setPath)
-        self.connect(self.findEdit, SIGNAL("returnPressed()"), self.find)
-
-        self.threadx = QThread()
-        self.connect(self.walker, SIGNAL("stopped(bool)"), self.threadx, SLOT('quit()'))
-        
-        self.connect(self, SIGNAL("destroyed()"), self.walker, SLOT("deleteLater()"))
-        self.connect(self, SIGNAL("destroyed()"), self.threadx, SLOT("deleteLater()"))
-        
         self.walker.moveToThread(self.threadx)
+    
+        # bit of house keeping if program terminated
+        self.destroyed.connect(self.threadx.deleteLater)
+        self.destroyed.connect(self.walker.deleteLater)
+    
+        self.threadx.finished.connect(self.walker.deleteLater)
+    
+        #self.walker.indexed.connect(self.indexed, Qt.BlockingQueuedConnection)
+        #event BlockingQueuedConnections work meaning the two processes are genuinely in different threads.
+        self.walker.indexed.connect(self.indexed, Qt.BlockingQueuedConnection)
+        self.walker.finished.connect(self.finished)
+        self.walker.stoppedsig.connect(self.threadx.quit)
+    
+        self.walkerinitializesignal.connect(self.walker.initialize)
+        self.walkerrunsignal.connect(self.walker.run)
+        self.walkerstopsignal.connect(self.walker.stop )
 
     @pyqtSlot() # from pathButton
     def setPath(self):
         self.pathButton.setEnabled(False)
         if self.threadx.isRunning():
-            self.walker.stop() # this methods will return a signal to stop the threads
+            self.walkerstopsignal.emit()
             self.threadx.wait()
         path = QFileDialog.getExistingDirectory(self,
                     "Choose a Path to Index", self.path)
@@ -124,10 +136,10 @@ class Form(QDialog):
         self.fileCount = 0
         self.filenamesForWords = collections.defaultdict(set)
         self.commonWords = set()
-        self.walker.initialize(self.path,
-                self.filenamesForWords, self.commonWords)
-        self.threadx.start()
-        self.walker.run()
+
+        self.walkerinitializesignal.emit(self.path, self.filenamesForWords, self.commonWords)
+        self.threadx.start()   
+        self.walkerrunsignal.emit()
 
     @pyqtSlot() # from FindButton
     def find(self):
@@ -161,8 +173,6 @@ class Form(QDialog):
 
     @pyqtSlot(str) # from walker object
     def indexed(self, fname):
-        #print('arrived {}'.format(fname))
-        qApp.processEvents() #needed for gui to refresh widgets
         self.statusLabel.setText(fname)
         self.fileCount += 1
         if self.fileCount % 25 == 0:
@@ -187,15 +197,17 @@ class Form(QDialog):
 
     def reject(self):
         if self.threadx.isRunning():
-            self.walker.stop()
+            self.walkerstopsignal.emit()
             self.finishedIndexing()
         else:
             self.accept()
 
 
     def closeEvent(self, event=None):
-        self.walker.stop()
-        self.threadx.wait()
+        self.walkerstopsignal.emit()
+        self.threadx.wait(2000)
+        
+        event.accept()
 
 
     def finishedIndexing(self):
@@ -204,10 +216,12 @@ class Form(QDialog):
         self.wordsIndexedLCD.display(len(self.filenamesForWords))
         self.commonWordsLCD.display(len(self.commonWords))
         self.pathButton.setEnabled(True)
-
+        
 
 app = QApplication(sys.argv)
 form = Form()
 form.show()
 app.exec_()
+
+
 
